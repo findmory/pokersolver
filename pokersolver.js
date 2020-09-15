@@ -348,11 +348,13 @@
      * @param  {Boolean} canDisqualify Check for a qualified hand.
      * @return {Hand}       Best hand.
      */
-    static solve(cards, game, canDisqualify, id) {
-      game = game || "standard";
+    static solve({
+      cards = [""],
+      game = "standard",
+      canDisqualify = false,
+      id = "",
+    } = {}) {
       game = typeof game === "string" ? new Game(game) : game;
-      cards = cards || [""];
-
       var hands = game.handValues;
       var result = null;
 
