@@ -5,7 +5,7 @@
  */
 
 (function () {
-  "use strict";
+  ("use strict");
 
   // NOTE: The 'joker' will be denoted with a value of 'O' and any suit.
   var values = [
@@ -428,6 +428,97 @@
     }
   }
 
+  /**
+   * Helper Functions that are used across classes
+   */
+
+  /**
+   * Get the number of gaps in the straight.
+   * @return {Array} Highest potential straight with fewest number of gaps.
+   */
+  function getGaps(checkHandLength, cardPool, game) {
+    var wildCards,
+      cardsToCheck,
+      i,
+      card,
+      gapCards,
+      cardsList,
+      gapCount,
+      prevCard,
+      diff;
+
+    var stripReturn = Hand.stripWilds(cardPool, game);
+    wildCards = stripReturn[0];
+    cardsToCheck = stripReturn[1];
+
+    for (i = 0; i < cardsToCheck.length; i++) {
+      card = cardsToCheck[i];
+      if (card.wildValue === "A") {
+        cardsToCheck.push(new Card("1" + card.suit));
+      }
+    }
+    cardsToCheck = cardsToCheck.sort(Card.sort);
+
+    if (checkHandLength) {
+      i = cardsToCheck[0].rank + 1;
+    } else {
+      checkHandLength = game.sfQualify;
+      i = values.length;
+    }
+
+    gapCards = [];
+    for (; i > 0; i--) {
+      cardsList = [];
+      gapCount = 0;
+      for (var j = 0; j < cardsToCheck.length; j++) {
+        card = cardsToCheck[j];
+        if (card.rank > i) {
+          continue;
+        }
+        prevCard = cardsList[cardsList.length - 1];
+        diff = prevCard ? prevCard.rank - card.rank : i - card.rank;
+
+        if (diff === null) {
+          cardsList.push(card);
+        } else if (checkHandLength < gapCount + diff + cardsList.length) {
+          break;
+        } else if (diff > 0) {
+          cardsList.push(card);
+          gapCount += diff - 1;
+        }
+      }
+      if (cardsList.length > gapCards.length) {
+        gapCards = cardsList.slice();
+      }
+      if (game.sfQualify - gapCards.length <= wildCards.length) {
+        break;
+      }
+    }
+
+    return gapCards;
+  }
+
+  /**
+   * Get the number of consecutive cards in straigh
+   * @return {Boolean} Open-ended straight draw - 4 in a row
+   */
+  function isOpenEnded(cardPool) {
+    // handle Bway and Wheel
+    // if we have an A (rank:0 or rank: 13)we can't be open ended
+    if (cardPool[0].rank === 13 || cardPool[3].rank === 0) {
+      return false;
+    }
+
+    let count = 0;
+    for (let i = 0; i < cardPool.length - 1; i++) {
+      if (cardPool[i].rank - 1 === cardPool[i + 1].rank) {
+        count++;
+      }
+    }
+
+    return count === 3;
+  }
+
   class StraightFlush extends Hand {
     constructor(cards, game, canDisqualify, id) {
       super(cards, "Straight Flush", game, canDisqualify, id);
@@ -466,6 +557,7 @@
 
       if (this.cards[0] && this.cards[0].rank === 13) {
         this.descr = "Royal Flush";
+        this.name = "Royal Flush";
       } else if (this.cards.length >= this.game.sfQualify) {
         this.descr =
           this.name +
@@ -490,7 +582,9 @@
       var possibleStraight = null;
       var nonCards = [];
 
-      if (!this.doesHandContainPair()) return false;
+      if (!this.doesHandContainPair()) {
+        return false;
+      }
 
       // first make sure we have a 4 to a flush
       for (var suit in this.suits) {
@@ -511,6 +605,10 @@
       }
 
       if (this.sfLength >= this.game.drawQualify) {
+        // do we have gutshot ?
+        let oe = isOpenEnded(this.cards);
+        this.name = oe ? this.name : "Gutshot " + this.name;
+
         this.descr =
           this.name +
           ", " +
@@ -561,6 +659,10 @@
       }
 
       if (this.sfLength >= this.game.drawQualify) {
+        // do we have gutshot ?
+        let oe = isOpenEnded(this.cards);
+        this.name = oe ? this.name : "Gutshot " + this.name;
+
         this.descr =
           this.name +
           ", " +
@@ -672,85 +774,6 @@
     }
   }
 
-  class FourOfAKindPairPlus extends Hand {
-    constructor(cards, game, canDisqualify, id) {
-      super(
-        cards,
-        "Four of a Kind with Pair or Better",
-        game,
-        canDisqualify,
-        id
-      );
-    }
-
-    solve() {
-      var cards;
-      this.resetWildCards();
-
-      for (var i = 0; i < this.values.length; i++) {
-        if (this.getNumCardsByRank(i) === 4) {
-          this.cards = this.values[i] || [];
-          for (var j = 0; j < this.wilds.length && this.cards.length < 4; j++) {
-            var wild = this.wilds[j];
-            if (this.cards) {
-              wild.rank = this.cards[0].rank;
-            } else {
-              wild.rank = values.length - 1;
-            }
-            wild.wildValue = values[wild.rank];
-            this.cards.push(wild);
-          }
-          break;
-        }
-      }
-
-      if (this.cards.length === 4) {
-        for (i = 0; i < this.values.length; i++) {
-          cards = this.values[i];
-          if (cards && this.cards[0].wildValue === cards[0].wildValue) {
-            continue;
-          }
-          if (this.getNumCardsByRank(i) >= 2) {
-            this.cards = this.cards.concat(cards || []);
-            for (var j = 0; j < this.wilds.length; j++) {
-              var wild = this.wilds[j];
-              if (wild.rank !== -1) {
-                continue;
-              }
-              if (cards) {
-                wild.rank = cards[0].rank;
-              } else if (
-                this.cards[0].rank === values.length - 1 &&
-                this.game.wildStatus === 1
-              ) {
-                wild.rank = values.length - 2;
-              } else {
-                wild.rank = values.length - 1;
-              }
-              wild.wildValue = values[wild.rank];
-              this.cards.push(wild);
-            }
-            this.cards = this.cards.concat(
-              this.nextHighest().slice(0, this.game.cardsInHand - 6)
-            );
-            break;
-          }
-        }
-      }
-
-      if (this.cards.length >= 6) {
-        var type =
-          this.cards[0].toString().slice(0, -1) +
-          "'s over " +
-          this.cards[4].toString().slice(0, -1) +
-          "'s";
-        this.descr = this.name + ", " + type;
-      }
-
-      return this.cards.length >= 6;
-    }
-  }
-
   class FourOfAKind extends Hand {
     constructor(cards, game, canDisqualify, id) {
       super(cards, "Four of a Kind", game, canDisqualify, id);
@@ -790,126 +813,6 @@
       }
 
       return this.cards.length >= 4;
-    }
-  }
-
-  class FourWilds extends Hand {
-    constructor(cards, game, canDisqualify, id) {
-      super(cards, "Four Wild Cards", game, canDisqualify, id);
-    }
-
-    solve() {
-      if (this.wilds.length === 4) {
-        this.cards = this.wilds;
-        this.cards = this.cards.concat(
-          this.nextHighest().slice(0, this.game.cardsInHand - 4)
-        );
-      }
-
-      if (this.cards.length >= 4) {
-        if (this.game.noKickers) {
-          this.cards.length = 4;
-        }
-
-        this.descr = this.name;
-      }
-
-      return this.cards.length >= 4;
-    }
-  }
-
-  class ThreeOfAKindTwoPair extends Hand {
-    constructor(cards, game, canDisqualify, id) {
-      super(cards, "Three of a Kind with Two Pair", game, canDisqualify, id);
-    }
-
-    solve() {
-      var cards;
-      this.resetWildCards();
-
-      for (var i = 0; i < this.values.length; i++) {
-        if (this.getNumCardsByRank(i) === 3) {
-          this.cards = this.values[i] || [];
-          for (var j = 0; j < this.wilds.length && this.cards.length < 3; j++) {
-            var wild = this.wilds[j];
-            if (this.cards) {
-              wild.rank = this.cards[0].rank;
-            } else {
-              wild.rank = values.length - 1;
-            }
-            wild.wildValue = values[wild.rank];
-            this.cards.push(wild);
-          }
-          break;
-        }
-      }
-
-      if (this.cards.length === 3) {
-        for (var i = 0; i < this.values.length; i++) {
-          var cards = this.values[i];
-          if (cards && this.cards[0].wildValue === cards[0].wildValue) {
-            continue;
-          }
-          if (this.cards.length > 5 && this.getNumCardsByRank(i) === 2) {
-            this.cards = this.cards.concat(cards || []);
-            for (var j = 0; j < this.wilds.length; j++) {
-              var wild = this.wilds[j];
-              if (wild.rank !== -1) {
-                continue;
-              }
-              if (cards) {
-                wild.rank = cards[0].rank;
-              } else if (
-                this.cards[0].rank === values.length - 1 &&
-                this.game.wildStatus === 1
-              ) {
-                wild.rank = values.length - 2;
-              } else {
-                wild.rank = values.length - 1;
-              }
-              wild.wildValue = values[wild.rank];
-              this.cards.push(wild);
-            }
-            this.cards = this.cards.concat(
-              this.nextHighest().slice(0, this.game.cardsInHand - 4)
-            );
-            break;
-          } else if (this.getNumCardsByRank(i) === 2) {
-            this.cards = this.cards.concat(cards);
-            for (var j = 0; j < this.wilds.length; j++) {
-              var wild = this.wilds[j];
-              if (wild.rank !== -1) {
-                continue;
-              }
-              if (cards) {
-                wild.rank = cards[0].rank;
-              } else if (
-                this.cards[0].rank === values.length - 1 &&
-                this.game.wildStatus === 1
-              ) {
-                wild.rank = values.length - 2;
-              } else {
-                wild.rank = values.length - 1;
-              }
-              wild.wildValue = values[wild.rank];
-              this.cards.push(wild);
-            }
-          }
-        }
-      }
-
-      if (this.cards.length >= 7) {
-        var type =
-          this.cards[0].toString().slice(0, -1) +
-          "'s over " +
-          this.cards[3].toString().slice(0, -1) +
-          "'s & " +
-          this.cards[5].value +
-          "'s";
-        this.descr = this.name + ", " + type;
-      }
-
-      return this.cards.length >= 7;
     }
   }
 
@@ -1073,7 +976,9 @@
       this.sfLength = 0;
       this.resetWildCards();
 
-      if (!this.doesHandContainPair()) return false;
+      if (!this.doesHandContainPair()) {
+        return false;
+      }
 
       for (var suit in this.suits) {
         var cards = this.getCardsForFlush(suit, true);
@@ -1114,65 +1019,12 @@
       var card, checkCards;
       this.resetWildCards();
 
-      // There are still some games that count the wheel as second highest.
-      // These games do not have enough cards/wilds to make AKQJT and 5432A both possible.
-      if (this.game.wheelStatus === 1) {
-        this.cards = this.getWheel();
-        if (this.cards.length) {
-          var wildCount = 0;
-          for (var i = 0; i < this.cards.length; i++) {
-            card = this.cards[i];
-            if (card.value === this.game.wildValue) {
-              wildCount += 1;
-            }
-            if (card.rank === 0) {
-              card.rank = values.indexOf("A");
-              card.wildValue = "A";
-              if (card.value === "1") {
-                card.value = "A";
-              }
-            }
-          }
-          this.cards = this.cards.sort(Card.sort);
-          for (
-            ;
-            wildCount < this.wilds.length &&
-            this.cards.length < this.game.cardsInHand;
-            wildCount++
-          ) {
-            card = this.wilds[wildCount];
-            card.rank = values.indexOf("A");
-            card.wildValue = "A";
-            this.cards.push(card);
-          }
-          this.descr = this.name + ", Wheel";
-          this.sfLength = this.sfQualify;
-          if (this.cards[0].value === "A") {
-            this.cards = this.cards.concat(
-              this.nextHighest().slice(
-                1,
-                this.game.cardsInHand - this.cards.length + 1
-              )
-            );
-          } else {
-            this.cards = this.cards.concat(
-              this.nextHighest().slice(
-                0,
-                this.game.cardsInHand - this.cards.length
-              )
-            );
-          }
-          return true;
-        }
-        this.resetWildCards();
-      }
-
-      this.cards = this.getGaps();
+      this.cards = getGaps(5, this.cardPool, this.game);
 
       // Now add the wild cards, if any, and set the appropriate ranks
       for (var i = 0; i < this.wilds.length; i++) {
         card = this.wilds[i];
-        checkCards = this.getGaps(this.cards.length);
+        checkCards = getGaps(this.cards.length, this.cards, this.game);
         if (this.cards.length === checkCards.length) {
           // This is an "open-ended" straight, the high rank is the highest possible rank.
           if (this.cards[0].rank < values.length - 1) {
@@ -1223,118 +1075,6 @@
 
       return this.cards.length >= this.game.sfQualify;
     }
-
-    /**
-     * Get the number of gaps in the straight.
-     * @return {Array} Highest potential straight with fewest number of gaps.
-     */
-    getGaps(checkHandLength) {
-      var wildCards,
-        cardsToCheck,
-        i,
-        card,
-        gapCards,
-        cardsList,
-        gapCount,
-        prevCard,
-        diff;
-
-      var stripReturn = Hand.stripWilds(this.cardPool, this.game);
-      wildCards = stripReturn[0];
-      cardsToCheck = stripReturn[1];
-
-      for (i = 0; i < cardsToCheck.length; i++) {
-        card = cardsToCheck[i];
-        if (card.wildValue === "A") {
-          cardsToCheck.push(new Card("1" + card.suit));
-        }
-      }
-      cardsToCheck = cardsToCheck.sort(Card.sort);
-
-      if (checkHandLength) {
-        i = cardsToCheck[0].rank + 1;
-      } else {
-        checkHandLength = this.game.sfQualify;
-        i = values.length;
-      }
-
-      gapCards = [];
-      for (; i > 0; i--) {
-        cardsList = [];
-        gapCount = 0;
-        for (var j = 0; j < cardsToCheck.length; j++) {
-          card = cardsToCheck[j];
-          if (card.rank > i) {
-            continue;
-          }
-          prevCard = cardsList[cardsList.length - 1];
-          diff = prevCard ? prevCard.rank - card.rank : i - card.rank;
-
-          if (diff === null) {
-            cardsList.push(card);
-          } else if (checkHandLength < gapCount + diff + cardsList.length) {
-            break;
-          } else if (diff > 0) {
-            cardsList.push(card);
-            gapCount += diff - 1;
-          }
-        }
-        if (cardsList.length > gapCards.length) {
-          gapCards = cardsList.slice();
-        }
-        if (this.game.sfQualify - gapCards.length <= wildCards.length) {
-          break;
-        }
-      }
-
-      return gapCards;
-    }
-
-    getWheel() {
-      var wildCards, cardsToCheck, i, card, wheelCards, wildCount, cardFound;
-
-      var stripReturn = Hand.stripWilds(this.cardPool, this.game);
-      wildCards = stripReturn[0];
-      cardsToCheck = stripReturn[1];
-
-      for (i = 0; i < cardsToCheck.length; i++) {
-        card = cardsToCheck[i];
-        if (card.wildValue === "A") {
-          cardsToCheck.push(new Card("1" + card.suit));
-        }
-      }
-      cardsToCheck = cardsToCheck.sort(Card.sort);
-
-      wheelCards = [];
-      wildCount = 0;
-      for (i = this.game.sfQualify - 1; i >= 0; i--) {
-        cardFound = false;
-        for (var j = 0; j < cardsToCheck.length; j++) {
-          card = cardsToCheck[j];
-          if (card.rank > i) {
-            continue;
-          }
-          if (card.rank < i) {
-            break;
-          }
-          wheelCards.push(card);
-          cardFound = true;
-          break;
-        }
-        if (!cardFound) {
-          if (wildCount < wildCards.length) {
-            wildCards[wildCount].rank = i;
-            wildCards[wildCount].wildValue = values[i];
-            wheelCards.push(wildCards[wildCount]);
-            wildCount += 1;
-          } else {
-            return [];
-          }
-        }
-      }
-
-      return wheelCards;
-    }
   }
 
   class StraightDrawNoPair extends Hand {
@@ -1346,90 +1086,14 @@
       var card, checkCards;
       this.resetWildCards();
 
-      // There are still some games that count the wheel as second highest.
-      // These games do not have enough cards/wilds to make AKQJT and 5432A both possible.
-      if (this.game.wheelStatus === 1) {
-        this.cards = this.getWheel();
-        if (this.cards.length) {
-          var wildCount = 0;
-          for (var i = 0; i < this.cards.length; i++) {
-            card = this.cards[i];
-            if (card.value === this.game.wildValue) {
-              wildCount += 1;
-            }
-            if (card.rank === 0) {
-              card.rank = values.indexOf("A");
-              card.wildValue = "A";
-              if (card.value === "1") {
-                card.value = "A";
-              }
-            }
-          }
-          this.cards = this.cards.sort(Card.sort);
-          for (
-            ;
-            wildCount < this.wilds.length &&
-            this.cards.length < this.game.cardsInHand;
-            wildCount++
-          ) {
-            card = this.wilds[wildCount];
-            card.rank = values.indexOf("A");
-            card.wildValue = "A";
-            this.cards.push(card);
-          }
-          this.descr = this.name + ", Wheel";
-          this.sfLength = this.sfQualify;
-          if (this.cards[0].value === "A") {
-            this.cards = this.cards.concat(
-              this.nextHighest().slice(
-                1,
-                this.game.cardsInHand - this.cards.length + 1
-              )
-            );
-          } else {
-            this.cards = this.cards.concat(
-              this.nextHighest().slice(
-                0,
-                this.game.cardsInHand - this.cards.length
-              )
-            );
-          }
-          return true;
-        }
-        this.resetWildCards();
-      }
+      this.cards = getGaps(5, this.cardPool, this.game);
 
-      this.cards = this.getGaps();
-
-      // Now add the wild cards, if any, and set the appropriate ranks
-      for (var i = 0; i < this.wilds.length; i++) {
-        card = this.wilds[i];
-        checkCards = this.getGaps(this.cards.length);
-        if (this.cards.length === checkCards.length) {
-          // This is an "open-ended" straight, the high rank is the highest possible rank.
-          if (this.cards[0].rank < values.length - 1) {
-            card.rank = this.cards[0].rank + 1;
-            card.wildValue = values[card.rank];
-            this.cards.push(card);
-          } else {
-            card.rank = this.cards[this.cards.length - 1].rank - 1;
-            card.wildValue = values[card.rank];
-            this.cards.push(card);
-          }
-        } else {
-          // This is an "inside" straight, the high card doesn't change.
-          for (var j = 1; j < this.cards.length; j++) {
-            if (this.cards[j - 1].rank - this.cards[j].rank > 1) {
-              card.rank = this.cards[j - 1].rank - 1;
-              card.wildValue = values[card.rank];
-              this.cards.push(card);
-              break;
-            }
-          }
-        }
-        this.cards = this.cards.sort(Card.sort);
-      }
+      // do we have enough cards for a draw?
       if (this.cards.length >= this.game.drawQualify) {
+        // do we have gutshot ?
+        let oe = isOpenEnded(this.cards);
+        this.name = oe ? this.name : "Gutshot " + this.name;
+
         this.descr =
           this.name + ", " + this.cards[0].toString().slice(0, -1) + " High";
         this.cards = this.cards.slice(0, this.game.cardsInHand);
@@ -1454,118 +1118,6 @@
       }
 
       return this.cards.length >= this.game.sfQualify;
-    }
-
-    /**
-     * Get the number of gaps in the straight.
-     * @return {Array} Highest potential straight with fewest number of gaps.
-     */
-    getGaps(checkHandLength) {
-      var wildCards,
-        cardsToCheck,
-        i,
-        card,
-        gapCards,
-        cardsList,
-        gapCount,
-        prevCard,
-        diff;
-
-      var stripReturn = Hand.stripWilds(this.cardPool, this.game);
-      wildCards = stripReturn[0];
-      cardsToCheck = stripReturn[1];
-
-      for (i = 0; i < cardsToCheck.length; i++) {
-        card = cardsToCheck[i];
-        if (card.wildValue === "A") {
-          cardsToCheck.push(new Card("1" + card.suit));
-        }
-      }
-      cardsToCheck = cardsToCheck.sort(Card.sort);
-
-      if (checkHandLength) {
-        i = cardsToCheck[0].rank + 1;
-      } else {
-        checkHandLength = this.game.sfQualify;
-        i = values.length;
-      }
-
-      gapCards = [];
-      for (; i > 0; i--) {
-        cardsList = [];
-        gapCount = 0;
-        for (var j = 0; j < cardsToCheck.length; j++) {
-          card = cardsToCheck[j];
-          if (card.rank > i) {
-            continue;
-          }
-          prevCard = cardsList[cardsList.length - 1];
-          diff = prevCard ? prevCard.rank - card.rank : i - card.rank;
-
-          if (diff === null) {
-            cardsList.push(card);
-          } else if (checkHandLength < gapCount + diff + cardsList.length) {
-            break;
-          } else if (diff > 0) {
-            cardsList.push(card);
-            gapCount += diff - 1;
-          }
-        }
-        if (cardsList.length > gapCards.length) {
-          gapCards = cardsList.slice();
-        }
-        if (this.game.sfQualify - gapCards.length <= wildCards.length) {
-          break;
-        }
-      }
-
-      return gapCards;
-    }
-
-    getWheel() {
-      var wildCards, cardsToCheck, i, card, wheelCards, wildCount, cardFound;
-
-      var stripReturn = Hand.stripWilds(this.cardPool, this.game);
-      wildCards = stripReturn[0];
-      cardsToCheck = stripReturn[1];
-
-      for (i = 0; i < cardsToCheck.length; i++) {
-        card = cardsToCheck[i];
-        if (card.wildValue === "A") {
-          cardsToCheck.push(new Card("1" + card.suit));
-        }
-      }
-      cardsToCheck = cardsToCheck.sort(Card.sort);
-
-      wheelCards = [];
-      wildCount = 0;
-      for (i = this.game.sfQualify - 1; i >= 0; i--) {
-        cardFound = false;
-        for (var j = 0; j < cardsToCheck.length; j++) {
-          card = cardsToCheck[j];
-          if (card.rank > i) {
-            continue;
-          }
-          if (card.rank < i) {
-            break;
-          }
-          wheelCards.push(card);
-          cardFound = true;
-          break;
-        }
-        if (!cardFound) {
-          if (wildCount < wildCards.length) {
-            wildCards[wildCount].rank = i;
-            wildCards[wildCount].wildValue = values[i];
-            wheelCards.push(wildCards[wildCount]);
-            wildCount += 1;
-          } else {
-            return [];
-          }
-        }
-      }
-
-      return wheelCards;
     }
   }
 
@@ -1578,67 +1130,16 @@
       var card, checkCards;
       this.resetWildCards();
 
-      // There are still some games that count the wheel as second highest.
-      // These games do not have enough cards/wilds to make AKQJT and 5432A both possible.
-      if (this.game.wheelStatus === 1) {
-        this.cards = this.getWheel();
-        if (this.cards.length) {
-          var wildCount = 0;
-          for (var i = 0; i < this.cards.length; i++) {
-            card = this.cards[i];
-            if (card.value === this.game.wildValue) {
-              wildCount += 1;
-            }
-            if (card.rank === 0) {
-              card.rank = values.indexOf("A");
-              card.wildValue = "A";
-              if (card.value === "1") {
-                card.value = "A";
-              }
-            }
-          }
-          this.cards = this.cards.sort(Card.sort);
-          for (
-            ;
-            wildCount < this.wilds.length &&
-            this.cards.length < this.game.cardsInHand;
-            wildCount++
-          ) {
-            card = this.wilds[wildCount];
-            card.rank = values.indexOf("A");
-            card.wildValue = "A";
-            this.cards.push(card);
-          }
-          this.descr = this.name + ", Wheel";
-          this.sfLength = this.sfQualify;
-          if (this.cards[0].value === "A") {
-            this.cards = this.cards.concat(
-              this.nextHighest().slice(
-                1,
-                this.game.cardsInHand - this.cards.length + 1
-              )
-            );
-          } else {
-            this.cards = this.cards.concat(
-              this.nextHighest().slice(
-                0,
-                this.game.cardsInHand - this.cards.length
-              )
-            );
-          }
-          return true;
-        }
-        this.resetWildCards();
+      if (!this.doesHandContainPair()) {
+        return false;
       }
 
-      if (!this.doesHandContainPair()) return false;
-
-      this.cards = this.getGaps();
+      this.cards = getGaps(5, this.cardPool, this.game);
 
       // Now add the wild cards, if any, and set the appropriate ranks
       for (var i = 0; i < this.wilds.length; i++) {
         card = this.wilds[i];
-        checkCards = this.getGaps(this.cards.length);
+        checkCards = getGaps(this.cards.length, this.cards, this.game);
         if (this.cards.length === checkCards.length) {
           // This is an "open-ended" straight, the high rank is the highest possible rank.
           if (this.cards[0].rank < values.length - 1) {
@@ -1664,6 +1165,10 @@
         this.cards = this.cards.sort(Card.sort);
       }
       if (this.cards.length >= this.game.drawQualify) {
+        // do we have gutshot ?
+        let oe = isOpenEnded(this.cards);
+        this.name = oe ? this.name : "Gutshot " + this.name;
+
         this.descr =
           this.name + ", " + this.cards[0].toString().slice(0, -1) + " High";
         this.cards = this.cards.slice(0, this.game.cardsInHand);
@@ -1688,187 +1193,6 @@
       }
 
       return this.cards.length >= this.game.sfQualify;
-    }
-
-    /**
-     * Get the number of gaps in the straight.
-     * @return {Array} Highest potential straight with fewest number of gaps.
-     */
-    getGaps(checkHandLength) {
-      var wildCards,
-        cardsToCheck,
-        i,
-        card,
-        gapCards,
-        cardsList,
-        gapCount,
-        prevCard,
-        diff;
-
-      var stripReturn = Hand.stripWilds(this.cardPool, this.game);
-      wildCards = stripReturn[0];
-      cardsToCheck = stripReturn[1];
-
-      for (i = 0; i < cardsToCheck.length; i++) {
-        card = cardsToCheck[i];
-        if (card.wildValue === "A") {
-          cardsToCheck.push(new Card("1" + card.suit));
-        }
-      }
-      cardsToCheck = cardsToCheck.sort(Card.sort);
-
-      if (checkHandLength) {
-        i = cardsToCheck[0].rank + 1;
-      } else {
-        checkHandLength = this.game.sfQualify;
-        i = values.length;
-      }
-
-      gapCards = [];
-      for (; i > 0; i--) {
-        cardsList = [];
-        gapCount = 0;
-        for (var j = 0; j < cardsToCheck.length; j++) {
-          card = cardsToCheck[j];
-          if (card.rank > i) {
-            continue;
-          }
-          prevCard = cardsList[cardsList.length - 1];
-          diff = prevCard ? prevCard.rank - card.rank : i - card.rank;
-
-          if (diff === null) {
-            cardsList.push(card);
-          } else if (checkHandLength < gapCount + diff + cardsList.length) {
-            break;
-          } else if (diff > 0) {
-            cardsList.push(card);
-            gapCount += diff - 1;
-          }
-        }
-        if (cardsList.length > gapCards.length) {
-          gapCards = cardsList.slice();
-        }
-        if (this.game.sfQualify - gapCards.length <= wildCards.length) {
-          break;
-        }
-      }
-
-      return gapCards;
-    }
-
-    getWheel() {
-      var wildCards, cardsToCheck, i, card, wheelCards, wildCount, cardFound;
-
-      var stripReturn = Hand.stripWilds(this.cardPool, this.game);
-      wildCards = stripReturn[0];
-      cardsToCheck = stripReturn[1];
-
-      for (i = 0; i < cardsToCheck.length; i++) {
-        card = cardsToCheck[i];
-        if (card.wildValue === "A") {
-          cardsToCheck.push(new Card("1" + card.suit));
-        }
-      }
-      cardsToCheck = cardsToCheck.sort(Card.sort);
-
-      wheelCards = [];
-      wildCount = 0;
-      for (i = this.game.sfQualify - 1; i >= 0; i--) {
-        cardFound = false;
-        for (var j = 0; j < cardsToCheck.length; j++) {
-          card = cardsToCheck[j];
-          if (card.rank > i) {
-            continue;
-          }
-          if (card.rank < i) {
-            break;
-          }
-          wheelCards.push(card);
-          cardFound = true;
-          break;
-        }
-        if (!cardFound) {
-          if (wildCount < wildCards.length) {
-            wildCards[wildCount].rank = i;
-            wildCards[wildCount].wildValue = values[i];
-            wheelCards.push(wildCards[wildCount]);
-            wildCount += 1;
-          } else {
-            return [];
-          }
-        }
-      }
-
-      return wheelCards;
-    }
-  }
-
-  class TwoThreeOfAKind extends Hand {
-    constructor(cards, game, canDisqualify, id) {
-      super(cards, "Two Three Of a Kind", game, canDisqualify, id);
-    }
-
-    solve() {
-      this.resetWildCards();
-      for (var i = 0; i < this.values.length; i++) {
-        var cards = this.values[i];
-        if (this.cards.length > 0 && this.getNumCardsByRank(i) === 3) {
-          this.cards = this.cards.concat(cards || []);
-          for (var j = 0; j < this.wilds.length; j++) {
-            var wild = this.wilds[j];
-            if (wild.rank !== -1) {
-              continue;
-            }
-            if (cards) {
-              wild.rank = cards[0].rank;
-            } else if (
-              this.cards[0].rank === values.length - 1 &&
-              this.game.wildStatus === 1
-            ) {
-              wild.rank = values.length - 2;
-            } else {
-              wild.rank = values.length - 1;
-            }
-            wild.wildValue = values[wild.rank];
-            this.cards.push(wild);
-          }
-          this.cards = this.cards.concat(
-            this.nextHighest().slice(0, this.game.cardsInHand - 6)
-          );
-          break;
-        } else if (this.getNumCardsByRank(i) === 3) {
-          this.cards = this.cards.concat(cards);
-          for (var j = 0; j < this.wilds.length; j++) {
-            var wild = this.wilds[j];
-            if (wild.rank !== -1) {
-              continue;
-            }
-            if (cards) {
-              wild.rank = cards[0].rank;
-            } else if (
-              this.cards[0].rank === values.length - 1 &&
-              this.game.wildStatus === 1
-            ) {
-              wild.rank = values.length - 2;
-            } else {
-              wild.rank = values.length - 1;
-            }
-            wild.wildValue = values[wild.rank];
-            this.cards.push(wild);
-          }
-        }
-      }
-
-      if (this.cards.length >= 6) {
-        var type =
-          this.cards[0].toString().slice(0, -1) +
-          "'s & " +
-          this.cards[3].toString().slice(0, -1) +
-          "'s";
-        this.descr = this.name + ", " + type;
-      }
-
-      return this.cards.length >= 6;
     }
   }
 
@@ -1910,98 +1234,6 @@
       }
 
       return this.cards.length >= 3;
-    }
-  }
-
-  class ThreePair extends Hand {
-    constructor(cards, game, canDisqualify, id) {
-      super(cards, "Three Pair", game, canDisqualify, id);
-    }
-
-    solve() {
-      this.resetWildCards();
-
-      for (var i = 0; i < this.values.length; i++) {
-        var cards = this.values[i];
-        if (this.cards.length > 2 && this.getNumCardsByRank(i) === 2) {
-          this.cards = this.cards.concat(cards || []);
-          for (var j = 0; j < this.wilds.length; j++) {
-            var wild = this.wilds[j];
-            if (wild.rank !== -1) {
-              continue;
-            }
-            if (cards) {
-              wild.rank = cards[0].rank;
-            } else if (
-              this.cards[0].rank === values.length - 1 &&
-              this.game.wildStatus === 1
-            ) {
-              wild.rank = values.length - 2;
-            } else {
-              wild.rank = values.length - 1;
-            }
-            wild.wildValue = values[wild.rank];
-            this.cards.push(wild);
-          }
-          this.cards = this.cards.concat(
-            this.nextHighest().slice(0, this.game.cardsInHand - 6)
-          );
-          break;
-        } else if (this.cards.length > 0 && this.getNumCardsByRank(i) === 2) {
-          this.cards = this.cards.concat(cards || []);
-          for (var j = 0; j < this.wilds.length; j++) {
-            var wild = this.wilds[j];
-            if (wild.rank !== -1) {
-              continue;
-            }
-            if (cards) {
-              wild.rank = cards[0].rank;
-            } else if (
-              this.cards[0].rank === values.length - 1 &&
-              this.game.wildStatus === 1
-            ) {
-              wild.rank = values.length - 2;
-            } else {
-              wild.rank = values.length - 1;
-            }
-            wild.wildValue = values[wild.rank];
-            this.cards.push(wild);
-          }
-        } else if (this.getNumCardsByRank(i) === 2) {
-          this.cards = this.cards.concat(cards);
-          for (var j = 0; j < this.wilds.length; j++) {
-            var wild = this.wilds[j];
-            if (wild.rank !== -1) {
-              continue;
-            }
-            if (cards) {
-              wild.rank = cards[0].rank;
-            } else if (
-              this.cards[0].rank === values.length - 1 &&
-              this.game.wildStatus === 1
-            ) {
-              wild.rank = values.length - 2;
-            } else {
-              wild.rank = values.length - 1;
-            }
-            wild.wildValue = values[wild.rank];
-            this.cards.push(wild);
-          }
-        }
-      }
-
-      if (this.cards.length >= 6) {
-        var type =
-          this.cards[0].toString().slice(0, -1) +
-          "'s & " +
-          this.cards[2].toString().slice(0, -1) +
-          "'s & " +
-          this.cards[4].toString().slice(0, -1) +
-          "'s";
-        this.descr = this.name + ", " + type;
-      }
-
-      return this.cards.length >= 6;
     }
   }
 
@@ -2151,6 +1383,7 @@
     standard: {
       cardsInHand: 5,
       handValues: [
+        RoyalFlush,
         StraightFlush,
         FourOfAKind,
         FullHouse,
@@ -2158,32 +1391,6 @@
         Straight,
         ThreeOfAKind,
         TwoPair,
-        OnePair,
-        HighCard,
-      ],
-      wildValue: null,
-      wildStatus: 1,
-      wheelStatus: 0,
-      sfQualify: 5,
-      lowestQualified: null,
-      noKickers: false,
-    },
-    boss: {
-      cardsInHand: 5,
-      handValues: [
-        StraightFlush,
-        FourOfAKind,
-        FullHouse,
-        Flush,
-        StraightFlushDrawWithPair,
-        Straight,
-        StraightFlushDrawNoPair,
-        ThreeOfAKind,
-        FlushDrawWithPair,
-        StraightDrawWithPair,
-        TwoPair,
-        FlushDrawNoPair,
-        StraightDrawNoPair,
         OnePair,
         HighCard,
       ],
@@ -2195,212 +1402,61 @@
       lowestQualified: null,
       noKickers: false,
     },
-    jacksbetter: {
+    boss: {
       cardsInHand: 5,
       handValues: [
+        RoyalFlush,
         StraightFlush,
         FourOfAKind,
         FullHouse,
         Flush,
+        StraightFlushDrawWithPair,
         Straight,
+        StraightFlushDrawNoPair,
         ThreeOfAKind,
         TwoPair,
+        FlushDrawWithPair,
+        StraightDrawWithPair,
+        FlushDrawNoPair,
         OnePair,
+        StraightDrawNoPair,
         HighCard,
       ],
       wildValue: null,
       wildStatus: 1,
       wheelStatus: 0,
       sfQualify: 5,
-      lowestQualified: ["Jc", "Jd", "4h", "3s", "2c"],
-      noKickers: true,
-    },
-    joker: {
-      cardsInHand: 5,
-      handValues: [
-        NaturalRoyalFlush,
-        FiveOfAKind,
-        WildRoyalFlush,
-        StraightFlush,
-        FourOfAKind,
-        FullHouse,
-        Flush,
-        Straight,
-        ThreeOfAKind,
-        TwoPair,
-        HighCard,
-      ],
-      wildValue: "O",
-      wildStatus: 1,
-      wheelStatus: 0,
-      sfQualify: 5,
-      lowestQualified: ["4c", "3d", "3h", "2s", "2c"],
-      noKickers: true,
-    },
-    deuceswild: {
-      cardsInHand: 5,
-      handValues: [
-        NaturalRoyalFlush,
-        FourWilds,
-        WildRoyalFlush,
-        FiveOfAKind,
-        StraightFlush,
-        FourOfAKind,
-        FullHouse,
-        Flush,
-        Straight,
-        ThreeOfAKind,
-        HighCard,
-      ],
-      wildValue: "2",
-      wildStatus: 1,
-      wheelStatus: 0,
-      sfQualify: 5,
-      lowestQualified: ["5c", "4d", "3h", "3s", "3c"],
-      noKickers: true,
-    },
-    threecard: {
-      cardsInHand: 3,
-      handValues: [
-        StraightFlush,
-        ThreeOfAKind,
-        Straight,
-        Flush,
-        OnePair,
-        HighCard,
-      ],
-      wildValue: null,
-      wildStatus: 1,
-      wheelStatus: 0,
-      sfQualify: 3,
-      lowestQualified: ["Qh", "3s", "2c"],
+      drawQualify: 4,
+      lowestQualified: null,
       noKickers: false,
     },
-    fourcard: {
-      cardsInHand: 4,
-      handValues: [
-        FourOfAKind,
-        StraightFlush,
-        ThreeOfAKind,
-        Flush,
-        Straight,
-        TwoPair,
-        OnePair,
-        HighCard,
-      ],
-      wildValue: null,
-      wildStatus: 1,
-      wheelStatus: 0,
-      sfQualify: 4,
-      lowestQualified: null,
-      noKickers: true,
-    },
-    fourcardbonus: {
-      cardsInHand: 4,
-      handValues: [
-        FourOfAKind,
-        StraightFlush,
-        ThreeOfAKind,
-        Flush,
-        Straight,
-        TwoPair,
-        OnePair,
-        HighCard,
-      ],
-      wildValue: null,
-      wildStatus: 1,
-      wheelStatus: 0,
-      sfQualify: 4,
-      lowestQualified: ["Ac", "Ad", "3h", "2s"],
-      noKickers: true,
-    },
-    paigowpokerfull: {
-      cardsInHand: 7,
-      handValues: [
-        FiveOfAKind,
-        FourOfAKindPairPlus,
-        StraightFlush,
-        Flush,
-        Straight,
-        FourOfAKind,
-        TwoThreeOfAKind,
-        ThreeOfAKindTwoPair,
-        FullHouse,
-        ThreeOfAKind,
-        ThreePair,
-        TwoPair,
-        OnePair,
-        HighCard,
-      ],
-      wildValue: "O",
-      wildStatus: 0,
-      wheelStatus: 1,
-      sfQualify: 5,
-      lowestQualified: null,
-    },
-    paigowpokeralt: {
-      cardsInHand: 7,
-      handValues: [
-        FourOfAKind,
-        FullHouse,
-        ThreeOfAKind,
-        ThreePair,
-        TwoPair,
-        OnePair,
-        HighCard,
-      ],
-      wildValue: "O",
-      wildStatus: 0,
-      wheelStatus: 1,
-      sfQualify: 5,
-      lowestQualified: null,
-    },
-    paigowpokersf6: {
-      cardsInHand: 7,
-      handValues: [StraightFlush, Flush, Straight],
-      wildValue: "O",
-      wildStatus: 0,
-      wheelStatus: 1,
-      sfQualify: 6,
-      lowestQualified: null,
-    },
-    paigowpokersf7: {
-      cardsInHand: 7,
-      handValues: [StraightFlush, Flush, Straight],
-      wildValue: "O",
-      wildStatus: 0,
-      wheelStatus: 1,
-      sfQualify: 7,
-      lowestQualified: null,
-    },
-    paigowpokerhi: {
+
+    bossAgroDraws: {
       cardsInHand: 5,
       handValues: [
-        FiveOfAKind,
         StraightFlush,
         FourOfAKind,
         FullHouse,
+        StraightFlushDrawWithPair,
+        StraightFlushDrawNoPair,
+        FlushDrawWithPair,
         Flush,
+        StraightDrawWithPair,
         Straight,
+        FlushDrawNoPair,
         ThreeOfAKind,
         TwoPair,
+        StraightDrawNoPair,
         OnePair,
         HighCard,
       ],
-      wildValue: "O",
-      wildStatus: 0,
-      wheelStatus: 1,
+      wildValue: null,
+      wildStatus: 1,
+      wheelStatus: 0,
       sfQualify: 5,
+      drawQualify: 4,
       lowestQualified: null,
-    },
-    paigowpokerlo: {
-      cardsInHand: 2,
-      handValues: [OnePair, HighCard],
-      wildValue: "O",
-      wildStatus: 0,
-      wheelStatus: 1,
-      sfQualify: 5,
-      lowestQualified: null,
+      noKickers: false,
     },
   };
 
@@ -2424,14 +1480,14 @@
       if (!this.descr || !gameRules[this.descr]) {
         this.descr = "standard";
       }
-      this.cardsInHand = gameRules[this.descr]["cardsInHand"];
-      this.handValues = gameRules[this.descr]["handValues"];
-      this.wildValue = gameRules[this.descr]["wildValue"];
-      this.wildStatus = gameRules[this.descr]["wildStatus"];
-      this.wheelStatus = gameRules[this.descr]["wheelStatus"];
-      this.sfQualify = gameRules[this.descr]["sfQualify"];
-      this.lowestQualified = gameRules[this.descr]["lowestQualified"];
-      this.noKickers = gameRules[this.descr]["noKickers"];
+      this.cardsInHand = gameRules[this.descr].cardsInHand;
+      this.handValues = gameRules[this.descr].handValues;
+      this.wildValue = gameRules[this.descr].wildValue;
+      this.wildStatus = gameRules[this.descr].wildStatus;
+      this.wheelStatus = gameRules[this.descr].wheelStatus;
+      this.sfQualify = gameRules[this.descr].sfQualify;
+      this.lowestQualified = gameRules[this.descr].lowestQualified;
+      this.noKickers = gameRules[this.descr].noKickers;
     }
   }
 
@@ -2440,20 +1496,16 @@
     global.Hand = Hand;
     global.Game = Game;
     global.RoyalFlush = RoyalFlush;
-    global.NaturalRoyalFlush = NaturalRoyalFlush;
-    global.WildRoyalFlush = WildRoyalFlush;
-    global.FiveOfAKind = FiveOfAKind;
+
     global.StraightFlush = StraightFlush;
-    global.FourOfAKindPairPlus = FourOfAKindPairPlus;
+
     global.FourOfAKind = FourOfAKind;
-    global.FourWilds = FourWilds;
-    global.TwoThreeOfAKind = TwoThreeOfAKind;
-    global.ThreeOfAKindTwoPair = ThreeOfAKindTwoPair;
+
     global.FullHouse = FullHouse;
     global.Flush = Flush;
     global.Straight = Straight;
     global.ThreeOfAKind = ThreeOfAKind;
-    global.ThreePair = ThreePair;
+
     global.TwoPair = TwoPair;
     global.FlushDrawNoPair = FlushDrawNoPair;
     global.StraightFlushDrawNoPair = StraightFlushDrawNoPair;
