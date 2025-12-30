@@ -540,20 +540,6 @@ class RoyalFlush extends StraightFlush {
   }
 }
 
-class NaturalRoyalFlush extends RoyalFlush {
-  constructor(cards, game, canDisqualify, id) {
-    super(cards, game, canDisqualify, id);
-  }
-
-  solve() {
-    const result = super.solve();
-    if (result && this.cards) {
-      this.descr = "Royal Flush";
-    }
-    return result;
-  }
-}
-
 class FourOfAKind extends Hand {
   constructor(cards, game, canDisqualify, id) {
     super(cards, "Four of a Kind", game, canDisqualify, id);
