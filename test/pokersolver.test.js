@@ -1,4 +1,4 @@
-const Hand = require("../pokersolver").Hand;
+import { Hand } from "../pokersolver.js";
 
 // made hands
 test("returns highcard", () => {
